@@ -12,10 +12,15 @@
  *
  */
 metadata {
-	definition (name: "Z-Wave Battery Thermostat", namespace: "smartthings", author: "SmartThings") {
+	definition (name: "Z-Wave Battery Thermostat", namespace: "smartthings", author: "SmartThings", ocfDeviceType: "oic.d.thermostat", genericHandler: "Z-Wave") {
 		capability "Actuator"
 		capability "Temperature Measurement"
-		capability "Thermostat"
+		capability "Thermostat Heating Setpoint"
+		capability "Thermostat Cooling Setpoint"
+		capability "Thermostat Operating State"
+		capability "Thermostat Mode"
+		capability "Thermostat Fan Mode"
+		capability "Configuration"
 		capability "Refresh"
 		capability "Sensor"
 		capability "Health Check"
@@ -30,8 +35,9 @@ metadata {
 		command "lowerCoolSetpoint"
 		command "raiseCoolSetpoint"
 
-		fingerprint inClusters: "0x43,0x40,0x44,0x31,0x80"
-		fingerprint mfr: "014F", prod: "5442", model: "5431", deviceJoinName: "Linear Z-Wave Thermostat"
+		fingerprint inClusters: "0x43,0x40,0x44,0x31,0x80", deviceJoinName: "Thermostat"
+		fingerprint mfr: "014F", prod: "5442", model: "5431", deviceJoinName: "Linear Thermostat" //Linear Z-Wave Thermostat
+		fingerprint mfr: "014F", prod: "5442", model: "5436", deviceJoinName: "GoControl Thermostat" //GoControl Z-Wave Thermostat
 	}
 
 	tiles {
@@ -124,6 +130,28 @@ def initialize() {
 	pollDevice()
 }
 
+def configure() {
+	def cmds = []
+	/*
+	Configuration of reporting values. Bitmask based on:
+	1	TEMPERATURE (CC_SENSOR_MULTILEVEL)
+	2	SETPOINT H
+	4	SETPOINT C
+	8	MODE
+	16	FANMODE
+	32	FANSTATE
+	64	OPERATING STATE
+	128	SCHEDENABLE
+	256	SETBACK
+	512	RUNHOLD
+	1024	DISPLAYLOCK
+	8192	BATTERY
+	16384	MECH STATUS
+	32768	SCP STATUS
+	*/
+	cmds << zwave.configurationV1.configurationSet(parameterNumber: 23, size: 2, scaledConfigurationValue: 8319).format()
+}
+
 def parse(String description)
 {
 	def result = []
@@ -139,6 +167,7 @@ def parse(String description)
 			log.debug "$device.displayName couldn't parse $description"
 		}
 	}
+	log.debug "parse $description to $result"
 	return result
 }
 
@@ -334,7 +363,7 @@ def pollDevice() {
 	cmds << new physicalgraph.device.HubAction(zwave.thermostatSetpointV1.thermostatSetpointGet(setpointType: 1).format())
 	cmds << new physicalgraph.device.HubAction(zwave.thermostatSetpointV1.thermostatSetpointGet(setpointType: 2).format())
 	cmds << new physicalgraph.device.HubAction(zwave.batteryV1.batteryGet().format())
-	sendHubCommand(cmds)
+	sendHubCommand(cmds, 1200)
 }
 
 def raiseHeatingSetpoint() {
@@ -455,14 +484,16 @@ def updateSetpoints() {
 def updateSetpoints(data) {
 	def cmds = []
 	if (data.targetHeatingSetpoint) {
-		cmds << new physicalgraph.device.HubAction(zwave.thermostatSetpointV1.thermostatSetpointSet(
-					setpointType: 1, scale: state.scale, precision: state.precision, scaledValue: data.targetHeatingSetpoint).format())
+		cmds << zwave.thermostatSetpointV1.thermostatSetpointSet(setpointType: 1, scale: state.scale,
+				precision: state.precision, scaledValue: data.targetHeatingSetpoint)
+		cmds << zwave.thermostatSetpointV1.thermostatSetpointGet(setpointType: 1)
 	}
 	if (data.targetCoolingSetpoint) {
-		cmds << new physicalgraph.device.HubAction(zwave.thermostatSetpointV1.thermostatSetpointSet(
-					setpointType: 2, scale: state.scale, precision: state.precision, scaledValue: data.targetCoolingSetpoint).format())
+		cmds << zwave.thermostatSetpointV1.thermostatSetpointSet(setpointType: 2, scale: state.scale,
+				precision: state.precision, scaledValue: data.targetCoolingSetpoint)
+		cmds << zwave.thermostatSetpointV1.thermostatSetpointGet(setpointType: 2)
 	}
-	sendHubCommand(cmds)
+	sendHubCommand(cmds, 1000)
 }
 
 // thermostatSetpoint is not displayed by any tile as it can't be predictable calculated due to
